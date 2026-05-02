@@ -52,7 +52,6 @@ def main(api_key: Optional[str] = None, use_mock: bool = False):
     logger = LoggingMiddleware("Main")
     logger.log_info("Starting Campus Notifications Priority Inbox System")
     
-    # API Configuration
     API_URL = "http://20.207.122.201/evaluation-service/notifications"
     TOP_N = 10
     
