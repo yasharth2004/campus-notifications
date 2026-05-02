@@ -1,8 +1,3 @@
-"""
-Priority Notification System for Campus Notifications Microservice
-Fetches notifications from API and maintains a sorted priority inbox
-"""
-
 import heapq
 import requests
 from datetime import datetime
@@ -11,9 +6,6 @@ from logging_middleware import LoggingMiddleware
 
 
 class Notification:
-    """Represents a single notification with priority scoring"""
-    
-    # Weight mapping for notification types
     TYPE_WEIGHTS = {
         "Placement": 3,
         "Result": 2,
@@ -25,14 +17,10 @@ class Notification:
         self.type = notification_data.get("Type")
         self.message = notification_data.get("Message")
         self.timestamp_str = notification_data.get("Timestamp")
-        
-        # Parse timestamp
         self.timestamp = datetime.strptime(
             self.timestamp_str,
             "%Y-%m-%d %H:%M:%S"
         )
-        
-        # Calculate priority score
         self.priority_score = self._calculate_priority()
     
     def _calculate_priority(self) -> float:
@@ -42,13 +30,8 @@ class Notification:
         2. Recency (more recent = higher score)
         """
         type_weight = self.TYPE_WEIGHTS.get(self.type, 0)
-        
-        # Convert timestamp to numeric value for recency comparison
-        # Using timestamp as secondary sort key (newer = higher)
+
         timestamp_numeric = self.timestamp.timestamp()
-        
-        # Combined priority: (type_weight * 1000000) + timestamp_numeric
-        # This ensures type weight is primary, timestamp is secondary
         priority = (type_weight * 1000000) + timestamp_numeric
         
         return priority
@@ -73,10 +56,6 @@ class Notification:
 
 
 class PriorityInboxManager:
-    """
-    Manages the priority inbox using a min-heap for efficient
-    top-n notification maintenance
-    """
     
     def __init__(self, top_n: int = 10):
         self.top_n = top_n
@@ -85,10 +64,7 @@ class PriorityInboxManager:
         self.logger.log_info(f"Initialized PriorityInboxManager with top_n={top_n}")
     
     def add_notification(self, notification: Notification):
-        """
-        Add notification to priority inbox, maintaining only top-n.
-        Uses min-heap for O(log n) insertion.
-        """
+
         self.logger.log_debug(
             f"Adding notification: {notification.id}",
             context={
@@ -99,15 +75,12 @@ class PriorityInboxManager:
         )
         
         if len(self.heap) < self.top_n:
-            # Heap not full yet, just add
             heapq.heappush(self.heap, notification)
             self.logger.log_debug(
                 "Notification added to heap",
                 context={"new_heap_size": len(self.heap)}
             )
         elif notification.priority_score > self.heap[0].priority_score:
-            # New notification has higher priority than min element
-            # Replace the minimum element
             removed = heapq.heapreplace(self.heap, notification)
             self.logger.log_debug(
                 f"Notification replaced minimum element",
@@ -117,22 +90,16 @@ class PriorityInboxManager:
                 }
             )
         else:
-            # Notification priority is lower than all in heap, skip it
             self.logger.log_debug(
                 f"Notification skipped (lower priority than min in heap)",
                 context={"notification_id": notification.id}
             )
     
     def get_top_notifications(self) -> List[Notification]:
-        """
-        Return top-n notifications sorted by priority (highest first)
-        """
         self.logger.log_info(
             f"Retrieving top {len(self.heap)} notifications",
             context={"total_in_heap": len(self.heap)}
         )
-        
-        # Sort heap in descending order (highest priority first)
         sorted_notifications = sorted(self.heap, key=lambda x: x.priority_score, reverse=True)
         
         self.logger.log_info(
@@ -146,7 +113,6 @@ class PriorityInboxManager:
         return sorted_notifications
     
     def get_statistics(self) -> Dict[str, Any]:
-        """Get statistics about current inbox state"""
         type_counts = {}
         for notification in self.heap:
             type_counts[notification.type] = type_counts.get(notification.type, 0) + 1
@@ -159,7 +125,6 @@ class PriorityInboxManager:
 
 
 class NotificationAPI:
-    """Handles communication with the Notification API"""
     
     def __init__(self, api_url: str, api_key: Optional[str] = None):
         self.api_url = api_url
@@ -171,9 +136,6 @@ class NotificationAPI:
         )
     
     def fetch_notifications(self) -> List[Dict[str, Any]]:
-        """
-        Fetch notifications from the API
-        """
         self.logger.log_info("Fetching notifications from API", context={"url": self.api_url})
         
         try:
@@ -223,13 +185,8 @@ def process_notifications(
     api_key: Optional[str] = None,
     use_mock: bool = False
 ) -> Dict[str, Any]:
-    """
-    Main function to fetch and prioritize notifications
-    """
     logger = LoggingMiddleware("NotificationProcessor")
     logger.log_info("Starting notification processing", context={"top_n": top_n, "use_mock": use_mock})
-    
-    # Fetch notifications
     notifications_data = None
     
     if use_mock:
@@ -248,8 +205,6 @@ def process_notifications(
             "top_notifications": [],
             "statistics": {}
         }
-    
-    # Process notifications through priority inbox
     manager = PriorityInboxManager(top_n=top_n)
     
     logger.log_info(
@@ -273,8 +228,6 @@ def process_notifications(
         f"Completed processing: {processed_count} notifications processed",
         context={"processed": processed_count, "total": len(notifications_data)}
     )
-    
-    # Get results
     top_notifications = manager.get_top_notifications()
     statistics = manager.get_statistics()
     
