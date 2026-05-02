@@ -1,0 +1,257 @@
+README: Next.js Notifications Frontend (implementation plan + full file templates)
+
+Purpose
+-
+This file contains a concrete plan and full-file templates to implement a responsive React/Next.js frontend that consumes the evaluation notifications API.
+
+Goals (as required)
+- Build All Notifications page and Priority Notifications page.
+- Support limit, page, notification_type query params.
+- Distinguish new vs viewed notifications via frontend (localStorage) and allow marking as seen.
+- Use Material UI for styling (fallback to native CSS only if MUI unavailable).
+- Robust error handling and responsive design (desktop + mobile).
+
+Quick instructions
+-
+1) Create project
+
+	 npx create-next-app@latest campus-notifications --use-npm --app
+	 cd campus-notifications
+
+2) Install dependencies
+
+	 npm install @mui/material @emotion/react @emotion/styled axios
+
+3) Add the following files (copy contents from the templates below).
+
+Project file structure
+----------------------
+Create these files inside your Next.js project root, `campus-notifications/`:
+
+```plaintext
+campus-notifications/
+├── pages/
+│   ├── _app.js
+│   ├── index.js
+│   └── priority.js
+├── components/
+│   ├── NotificationList.js
+│   └── NotificationCard.js
+├── lib/
+│   └── api.js
+└── styles/
+    └── globals.css
+```
+
+Create the folders first if they do not already exist, then add each file in the matching path above.
+
+Files and templates
+-
+pages/_app.js
+----------------
+// pages/_app.js
+import * as React from 'react'
+import Head from 'next/head'
+import { CssBaseline } from '@mui/material'
+import '../styles/globals.css'
+
+export default function MyApp({ Component, pageProps }) {
+	return (
+		<React.Fragment>
+			<Head>
+				<meta name="viewport" content="initial-scale=1, width=device-width" />
+				<title>Campus Notifications</title>
+			</Head>
+			<CssBaseline />
+			<Component {...pageProps} />
+		</React.Fragment>
+	)
+}
+
+pages/index.js (All Notifications)
+----------------
+// pages/index.js
+import React, { useEffect, useState } from 'react'
+import { Container, Typography, Box, Button, Alert } from '@mui/material'
+import NotificationList from '../components/NotificationList'
+import { fetchNotifications } from '../lib/api'
+
+export default function AllNotifications() {
+	const [items, setItems] = useState([])
+	const [error, setError] = useState(null)
+	const [loading, setLoading] = useState(false)
+
+	const load = async () => {
+		setLoading(true)
+		setError(null)
+		try {
+			const data = await fetchNotifications({ limit: 50, page: 1 })
+			// API assumed to return array in data.notifications or data
+			const list = data.notifications || data
+			const viewed = JSON.parse(localStorage.getItem('viewed_notifications_v1') || '[]')
+			// mark viewed flag for UI
+			const mapped = list.map(n => ({ ...n, viewed: viewed.includes(n.id) }))
+			setItems(mapped)
+		} catch (err) {
+			setError(err.message || 'Failed to fetch')
+		} finally {
+			setLoading(false)
+		}
+	}
+
+	useEffect(() => { load() }, [])
+
+	const markSeen = (id) => {
+		const viewed = new Set(JSON.parse(localStorage.getItem('viewed_notifications_v1') || '[]'))
+		viewed.add(id)
+		localStorage.setItem('viewed_notifications_v1', JSON.stringify(Array.from(viewed)))
+		setItems(prev => prev.map(p => p.id === id ? { ...p, viewed: true } : p))
+	}
+
+	return (
+		<Container maxWidth="lg" sx={{ py: 4 }}>
+			<Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+				<Typography variant="h4">All Notifications</Typography>
+				<Button href="/priority" variant="contained">Priority Notifications</Button>
+			</Box>
+			{error && <Alert severity="error">{error} <Button onClick={load}>Retry</Button></Alert>}
+			<NotificationList items={items} onMarkSeen={markSeen} loading={loading} />
+		</Container>
+	)
+}
+
+pages/priority.js (Priority Notifications)
+----------------
+// pages/priority.js
+import React, { useEffect, useState } from 'react'
+import { Container, Typography, Box, TextField, MenuItem, Button, Alert } from '@mui/material'
+import NotificationList from '../components/NotificationList'
+import { fetchNotifications } from '../lib/api'
+
+const TYPES = ['', 'Event', 'Result', 'Placement']
+
+export default function Priority() {
+	const [n, setN] = useState(10)
+	const [type, setType] = useState('')
+	const [items, setItems] = useState([])
+	const [error, setError] = useState(null)
+
+	const load = async () => {
+		setError(null)
+		try {
+			const data = await fetchNotifications({ limit: n, page: 1, notification_type: type || undefined })
+			const list = data.notifications || data
+			const viewed = JSON.parse(localStorage.getItem('viewed_notifications_v1') || '[]')
+			setItems(list.map(n => ({ ...n, viewed: viewed.includes(n.id) })))
+		} catch (err) {
+			setError(err.message || 'Failed to fetch')
+		}
+	}
+
+	useEffect(() => { load() }, [])
+
+	const markSeen = (id) => {
+		const viewed = new Set(JSON.parse(localStorage.getItem('viewed_notifications_v1') || '[]'))
+		viewed.add(id)
+		localStorage.setItem('viewed_notifications_v1', JSON.stringify(Array.from(viewed)))
+		setItems(prev => prev.map(p => p.id === id ? { ...p, viewed: true } : p))
+	}
+
+	return (
+		<Container maxWidth="lg" sx={{ py: 4 }}>
+			<Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+				<Typography variant="h4">Priority Notifications</Typography>
+				<Button href="/" variant="outlined">All Notifications</Button>
+			</Box>
+			<Box display="flex" gap={2} mb={2} flexWrap="wrap">
+				<TextField label="Top N" type="number" value={n} onChange={e => setN(Number(e.target.value) || 1)} sx={{ width: 120 }} />
+				<TextField select label="Type" value={type} onChange={e => setType(e.target.value)} sx={{ width: 200 }}>
+					{TYPES.map(t => <MenuItem key={t} value={t}>{t || 'All'}</MenuItem>)}
+				</TextField>
+				<Button variant="contained" onClick={load}>Fetch</Button>
+			</Box>
+			{error && <Alert severity="error">{error}</Alert>}
+			<NotificationList items={items} onMarkSeen={markSeen} />
+		</Container>
+	)
+}
+
+components/NotificationList.js
+----------------
+// components/NotificationList.js
+import React from 'react'
+import { Grid, CircularProgress, Box, Typography } from '@mui/material'
+import NotificationCard from './NotificationCard'
+
+export default function NotificationList({ items = [], onMarkSeen, loading=false }) {
+	if (loading) return <Box display="flex" justifyContent="center" py={6}><CircularProgress /></Box>
+	if (!items || items.length === 0) return <Typography>No notifications</Typography>
+	return (
+		<Grid container spacing={2}>
+			{items.map(n => (
+				<Grid item xs={12} sm={6} md={4} key={n.id}>
+					<NotificationCard notification={n} onMarkSeen={() => onMarkSeen(n.id)} />
+				</Grid>
+			))}
+		</Grid>
+	)
+}
+
+components/NotificationCard.js
+----------------
+// components/NotificationCard.js
+import React from 'react'
+import { Card, CardContent, Typography, Chip, Button, Box } from '@mui/material'
+
+export default function NotificationCard({ notification, onMarkSeen }) {
+	const isNew = !notification.viewed
+	return (
+		<Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+			<CardContent>
+				<Box display="flex" justifyContent="space-between" alignItems="start">
+					<Box>
+						<Typography variant="subtitle2" color="text.secondary">{notification.notification_type}</Typography>
+						<Typography variant="h6">{notification.title || notification.message || 'Notification'}</Typography>
+					</Box>
+					{isNew && <Chip color="primary" label="NEW" />}
+				</Box>
+				{notification.message && <Typography variant="body2" sx={{ mt: 1 }}>{notification.message}</Typography>}
+			</CardContent>
+			<Box sx={{ p: 1, pt: 0 }}>
+				<Button size="small" onClick={onMarkSeen}>Mark seen</Button>
+			</Box>
+		</Card>
+	)
+}
+
+lib/api.js
+----------------
+// lib/api.js
+import axios from 'axios'
+const BASE = 'http://20.207.122.201/evaluation-service/notifications'
+
+export async function fetchNotifications({ limit=20, page=1, notification_type } = {}) {
+	const params = { limit, page }
+	if (notification_type) params.notification_type = notification_type
+	const res = await axios.get(BASE, { params, timeout: 10000 })
+	return res.data
+}
+
+styles/globals.css
+----------------
+/* minimal global styles */
+body { margin: 0; font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial; }
+
+Notes and assumptions
+-
+- The API returns either an array or an object with a 'notifications' array; code checks both.
+- Notifications must have a unique 'id' field; if not, use another unique key.
+- localStorage key 'viewed_notifications_v1' stores array of ids for seen notifications. This is the frontend-only mechanism to distinguish new vs seen.
+- To capture mobile and desktop views for submission, run the dev server (npm run dev) and record screens.
+
+Next steps
+- Copy these templates into their respective files in the Next.js project.
+- Start the app and verify UI at http://localhost:3000
+
+If you want, I can now generate each file as ready-to-write patches. Reply "generate files" to proceed.
+
